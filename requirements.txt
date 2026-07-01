@@ -12,7 +12,7 @@ beautifulsoup4==4.14.3  # extracao de conteudo de paginas Microsoft Learn
 tiktoken
 chromadb 
 sentence-transformers
-
+ipykernel
 # --- Opcional (apenas se quiser usar RAG com docs/ + vectorizer.py) --------- #
 # scikit-learn==1.8.0
 # numpy==1.26.4
