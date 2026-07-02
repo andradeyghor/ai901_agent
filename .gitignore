@@ -11,6 +11,8 @@ chunks/
 history.csv
 rag/generator_original.py
 rag/main_original.py
+testes
+scripts
 
 # Arquivos de configuração sensíveis
 .env
