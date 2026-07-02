@@ -31,28 +31,22 @@ import json
 import re
 from pathlib import Path
 
-# se for usar embedding OpenAI
-# import tiktoken 
+# ===== ESCOLHA O TOKENIZADOR =====
+# Opção 1: OpenAI (cl100k_base) - Descomente para OpenAI
+# import tiktoken
+# TOKENIZER = tiktoken.get_encoding("cl100k_base")
+# TARGET_TOKENS = 450
+# MAX_TOKENS = 600
 
-# se for usar embedding com modelo local
+# Opção 2: Local BERT (all-MiniLM-L6-v2) - Descomente para local
 from transformers import AutoTokenizer
-
-TARGET_TOKENS = 250        # tamanho-alvo por chunk
-MAX_TOKENS = 400           # limite antes de forçar corte mesmo no meio de um parágrafo grande
-OVERLAP_PARAGRAPHS = 1     # quantos parágrafos do fim do chunk anterior repetir no início do próximo
-
-# objeto encoder para OpenAI (que tokeniza)
-# ENCODING = tiktoken.get_encoding("cl100k_base")
-
 TOKENIZER = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
-
+TARGET_TOKENS = 250
+MAX_TOKENS = 400
+OVERLAP_PARAGRAPHS = 1
 
 # Regex para encontrar linhas de cabeçalho ## ou ### (não #### em diante, não # de nível 1)
 HEADER_RE = re.compile(r"^(#{2,3})\s+(.*)$", re.MULTILINE)
-
-# para OpenAI
-# def count_tokens(text: str) -> int:
-#     return len(ENCODING.encode(text))
 
 def count_tokens(text: str) -> int:
     return len(TOKENIZER.encode(text))
@@ -208,6 +202,9 @@ def main():
         all_chunks.extend(chunks)
         print(f"  {filepath.relative_to(docs_dir)}: {len(chunks)} chunks")
 
+    # Cria a pasta de saída se não existir
+    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+    
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(all_chunks, f, ensure_ascii=False, indent=2)
 

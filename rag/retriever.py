@@ -7,11 +7,41 @@ import argparse
 import chromadb
 from chromadb.utils import embedding_functions
 
+import os
+from dotenv import load_dotenv
+
+load_dotenv()  # Carrega as variáveis do .env
+
 class Retriever:
-    def __init__(self, persist_dir="./chroma_db", collection_name="meus_documentos"):
-        # Inicializa o cliente e a coleção
+    def __init__(self, persist_dir="./chroma_db", collection_name="documentos_ai901"):
+        # Inicializa o cliente
         self.client = chromadb.PersistentClient(path=persist_dir)
-        self.collection = self.client.get_collection(collection_name)
+
+        # Cria a MESMA função de embedding usada no ingest
+        embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name="all-MiniLM-L6-v2"
+        )
+
+        # =============================================
+        # OPÇÃO OPENAI (paga, via API) - Descomente para usar
+        # =============================================
+        # from dotenv import load_dotenv
+        # import os
+        # load_dotenv()
+        # api_key = os.getenv("OPENAI_API_KEY")
+        # if not api_key:
+        #     raise ValueError("OPENAI_API_KEY não encontrada no .env")
+        # embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
+        #     api_key=api_key,
+        #     model_name="text-embedding-ada-002"
+        # )
+
+
+        # Passa a função explicitamente para garantir que as queries sejam vetorizadas corretamente
+        self.collection = self.client.get_collection(
+            collection_name,
+            embedding_function=embedding_fn
+        )
         
     def retrieve(self, query, top_k=5, filter_meta=None):
         """
@@ -54,7 +84,7 @@ def main():
     parser.add_argument("--query", required=True, help="Pergunta do usuário")
     parser.add_argument("--top-k", type=int, default=5, help="Número de chunks a recuperar")
     parser.add_argument("--persist-dir", default="./chroma_db")
-    parser.add_argument("--collection", default="meus_documentos")
+    parser.add_argument("--collection", default="documentos_ai901")
     args = parser.parse_args()
 
     retriever = Retriever(args.persist_dir, args.collection)

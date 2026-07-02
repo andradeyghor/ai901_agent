@@ -1,4 +1,21 @@
-.env
+# Ambientes virtuais
 .venv/
+venv/
+env/
+
+# Dados gerados pelo pipeline
+chroma_db/
+chunks/
+*.json
+*.db
+
+# Arquivos de configuração sensíveis
+.env
+*.env
+
+# Arquivos temporários e logs
 __pycache__/
 *.pyc
+*.pyo
+*.log
+.DS_Store

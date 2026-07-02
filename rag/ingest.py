@@ -9,6 +9,11 @@ from pathlib import Path
 import chromadb
 from chromadb.utils import embedding_functions
 
+import os
+from dotenv import load_dotenv
+
+load_dotenv()  # Carrega as variáveis do .env
+
 def main():
     parser = argparse.ArgumentParser(description="Ingerir chunks no ChromaDB")
     parser.add_argument("--chunks", default="chunks/chunks.json", help="Arquivo JSON gerado pelo chunker")
@@ -36,11 +41,16 @@ def main():
         model_name="all-MiniLM-L6-v2"  # Pode trocar por outro modelo, ex: "all-mpnet-base-v2"
     )
 
-        # # se for usar tiktoken (OpenAI)
-        # embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
-        #     api_key="sua-chave",
-        #     model_name="text-embedding-ada-002"
-        # )
+    # =============================================
+    # OPÇÃO OPENAI (paga, via API) - Descomente para usar
+    # =============================================
+    # api_key = os.getenv("OPENAI_API_KEY")
+    # if not api_key:
+    #     raise SystemExit("ERRO: Variável OPENAI_API_KEY não encontrada no .env")
+    # embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
+    #     api_key=api_key,
+    #     model_name="text-embedding-ada-002"  # Ou "text-embedding-3-small", "text-embedding-3-large"
+    # )
 
     # 3. Inicializar cliente persistente
     client = chromadb.PersistentClient(path=args.persist_dir)
