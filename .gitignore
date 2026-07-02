@@ -9,6 +9,8 @@ chunks/
 *.json
 *.db
 history.csv
+rag/generator_original.py
+rag/main_original.py
 
 # Arquivos de configuração sensíveis
 .env
