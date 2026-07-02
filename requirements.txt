@@ -13,6 +13,7 @@ tiktoken
 chromadb 
 sentence-transformers
 ipykernel
+openai
 # --- Opcional (apenas se quiser usar RAG com docs/ + vectorizer.py) --------- #
 # scikit-learn==1.8.0
 # numpy==1.26.4
