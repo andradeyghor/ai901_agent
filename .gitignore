@@ -8,6 +8,7 @@ chroma_db/
 chunks/
 *.json
 *.db
+history.csv
 
 # Arquivos de configuração sensíveis
 .env
