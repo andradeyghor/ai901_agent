@@ -11,7 +11,7 @@ from chromadb.utils import embedding_functions
 
 def main():
     parser = argparse.ArgumentParser(description="Ingerir chunks no ChromaDB")
-    parser.add_argument("--chunks", default="chunks.json", help="Arquivo JSON gerado pelo chunker")
+    parser.add_argument("--chunks", default="chunks/chunks.json", help="Arquivo JSON gerado pelo chunker")
     parser.add_argument("--collection", default="documentos_ai901", help="Nome da coleção no ChromaDB")
     parser.add_argument("--persist-dir", default="./chroma_db", help="Diretório de persistência")
     parser.add_argument("--batch-size", type=int, default=100, help="Tamanho do lote para inserção")
@@ -31,14 +31,16 @@ def main():
     print(f"Carregados {len(chunks)} chunks do arquivo.")
 
     # 2. Configurar a função de embedding (local, gratuita)
+    # se for usar modelo local
     embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
         model_name="all-MiniLM-L6-v2"  # Pode trocar por outro modelo, ex: "all-mpnet-base-v2"
     )
-    # Caso queira usar OpenAI (com API key):
-    # embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
-    #     api_key="sua-chave",
-    #     model_name="text-embedding-ada-002"
-    # )
+
+        # # se for usar tiktoken (OpenAI)
+        # embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
+        #     api_key="sua-chave",
+        #     model_name="text-embedding-ada-002"
+        # )
 
     # 3. Inicializar cliente persistente
     client = chromadb.PersistentClient(path=args.persist_dir)
