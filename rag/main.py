@@ -4,7 +4,7 @@
 simulator.py
 ============
 
-Simulador de provas Microsoft Azure AI Fundamentals (AI-901) com Flask.
+Simulador de provas Microsoft Azure AI Fundamentals (AI-901) com Flask. Em parceira com Igor Oliveira.
 
 Usa a API do DeepSeek Chat (modelo `deepseek-chat`) para gerar
 questoes de multipla escolha no estilo da prova. O usuario responde clicando:
