@@ -419,7 +419,7 @@ def inicializar():
                 model_type="deepseek",
                 model_name=DEEPSEEK_MODEL,
                 api_key=DEEPSEEK_API_KEY,
-                temperature=0.9,
+                temperature=0.3,
                 max_tokens=4000
             )
             print("[LLM] DeepSeek carregado com sucesso.")
