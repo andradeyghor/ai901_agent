@@ -37,9 +37,10 @@ TARGET_TOKENS = 450        # tamanho-alvo por chunk (dentro da faixa 300-500)
 MAX_TOKENS = 600           # limite antes de forçar corte mesmo no meio de um parágrafo grande
 OVERLAP_PARAGRAPHS = 1     # quantos parágrafos do fim do chunk anterior repetir no início do próximo
 
+# objeto encoder (que tokeniza)
 ENCODING = tiktoken.get_encoding("cl100k_base")
 
-# Detecta linhas de cabeçalho ## ou ### (não #### em diante, não # de nível 1)
+# Regex para encontrar linhas de cabeçalho ## ou ### (não #### em diante, não # de nível 1)
 HEADER_RE = re.compile(r"^(#{2,3})\s+(.*)$", re.MULTILINE)
 
 
@@ -53,7 +54,7 @@ def split_into_sections(md_text: str):
     Retorna uma lista de dicts: {"titulo": str, "nivel": int, "corpo": str}
     O texto antes do primeiro cabeçalho (se houver) vira a seção "Introdução" (nivel 0).
     """
-    matches = list(HEADER_RE.finditer(md_text))
+    matches = list(HEADER_RE.finditer(md_text)) # matches não contém a intro (pois não há ## ou ###)
     sections = []
 
     # Texto antes do primeiro cabeçalho
@@ -63,10 +64,10 @@ def split_into_sections(md_text: str):
         sections.append({"titulo": "Introdução", "nivel": 0, "corpo": intro_text})
 
     for i, m in enumerate(matches):
-        nivel = len(m.group(1))  # 2 ou 3
-        titulo = m.group(2).strip()
-        body_start = m.end()
-        body_end = matches[i + 1].start() if i + 1 < len(matches) else len(md_text)
+        nivel = len(m.group(1)) # tamanho (2 para ##, ou 3 para ###)
+        titulo = m.group(2).strip() # cabeçalho (o que vem após ##)
+        body_start = m.end() # posição logo após cabeçalho
+        body_end = matches[i + 1].start() if i + 1 < len(matches) else len(md_text) # texto termina no prox cabeçalho
         corpo = md_text[body_start:body_end].strip()
         sections.append({"titulo": titulo, "nivel": nivel, "corpo": corpo})
 
@@ -80,6 +81,7 @@ def split_into_blocks(corpo: str):
     são agrupados como um único bloco, para nunca serem cortados ao meio.
     """
     raw_paragraphs = [p.strip() for p in re.split(r"\n\s*\n", corpo) if p.strip()]
+    # corta o texto onde há uma ou mais linhas em branco
 
     blocks = []
     buffer_list = []
@@ -173,7 +175,7 @@ def process_file(filepath: Path, topico: str):
 def main():
     parser = argparse.ArgumentParser(description="Chunking de arquivos .md para RAG")
     parser.add_argument("--docs-dir", default="docs", help="Pasta raiz contendo subpastas por tópico")
-    parser.add_argument("--output", default="chunks.json", help="Arquivo JSON de saída")
+    parser.add_argument("--output", default="chunks/chunks.json", help="Arquivo JSON de saída")
     args = parser.parse_args()
 
     docs_dir = Path(args.docs_dir)
