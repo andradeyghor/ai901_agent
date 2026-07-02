@@ -31,6 +31,7 @@ except ImportError:
 class Generator:
     """
     Classe para gerar respostas usando LLM a partir de um contexto.
+    Centraliza chamadas à API, tratamento de erros e configurações.
     """
 
     def __init__(
@@ -106,17 +107,69 @@ class Generator:
         else:
             raise ValueError(f"model_type inválido: {model_type}. Use 'openai', 'deepseek' ou 'ollama'.")
 
+    # -------------------------------------------------------------------------
+    # Método público principal para enviar mensagens customizadas
+    # -------------------------------------------------------------------------
+    def generate_from_messages(
+        self,
+        messages: list[dict[str, str]],
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None
+    ) -> str:
+        """
+        Envia uma lista customizada de mensagens para a API e retorna a resposta.
+        Útil para prompts complexos (ex: geração de JSON estruturado).
+
+        Args:
+            messages: lista de dicionários [{"role": "system", "content": ...}, {"role": "user", ...}]
+            temperature: temperatura (se None, usa o valor do objeto)
+            max_tokens: tokens máximos (se None, usa o valor do objeto)
+
+        Returns:
+            conteúdo da resposta (string)
+        """
+        if self.model_type == "ollama":
+            # Para Ollama, fazemos um merge manual (já que não suporta messages nativamente igual OpenAI)
+            # Mas vamos simplificar: convertemos para um prompt único.
+            full_prompt = "\n".join([m["content"] for m in messages if m["role"] in ("system", "user")])
+            payload = {
+                "model": self.model_name,
+                "prompt": full_prompt,
+                "stream": False,
+                "options": {
+                    "temperature": temperature or self.temperature,
+                    "num_predict": max_tokens or self.max_tokens
+                }
+            }
+            try:
+                response = requests.post(self.api_url, json=payload, timeout=120)
+                response.raise_for_status()
+                return response.json().get("response", "")
+            except Exception as e:
+                return f"Erro no Ollama: {str(e)}"
+
+        # Para OpenAI / DeepSeek (formato compatível)
+        temp = temperature if temperature is not None else self.temperature
+        max_tok = max_tokens if max_tokens is not None else self.max_tokens
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                temperature=temp,
+                max_tokens=max_tok
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            return f"Erro ao chamar API: {str(e)}"
+
+    # -------------------------------------------------------------------------
+    # Método original (mantido para compatibilidade com o uso anterior)
+    # -------------------------------------------------------------------------
     def generate(self, query: str, context: str, system_prompt: Optional[str] = None) -> str:
         """
         Gera uma resposta para a query usando o contexto fornecido.
-
-        Args:
-            query: pergunta do usuário
-            context: contexto recuperado (texto dos chunks)
-            system_prompt: prompt de sistema personalizado (opcional)
-
-        Returns:
-            resposta gerada pelo LLM
+        (Método legado, mas mantido para não quebrar scripts existentes.)
         """
         if not context or context == "Nenhum documento relevante encontrado.":
             return "Desculpe, não encontrei informações relevantes para sua pergunta."
@@ -136,51 +189,16 @@ Pergunta: {query}
 
 Resposta (baseada APENAS no contexto acima):
 """
-
-        if self.model_type in ("openai", "deepseek"):
-            return self._generate_openai(system_prompt, user_prompt)
-        elif self.model_type == "ollama":
-            return self._generate_ollama(system_prompt, user_prompt)
-        else:
-            raise RuntimeError(f"Tipo de modelo não suportado: {self.model_type}")
-
-    def _generate_openai(self, system_prompt: str, user_prompt: str) -> str:
-        """Chama a API OpenAI/DeepSeek (formato compatível)."""
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=self.temperature,
-                max_tokens=self.max_tokens
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            return f"Erro ao chamar API: {str(e)}"
-
-    def _generate_ollama(self, system_prompt: str, user_prompt: str) -> str:
-        """Chama a API do Ollama (geração sem streaming)."""
-        full_prompt = f"{system_prompt}\n\n{user_prompt}"
-        payload = {
-            "model": self.model_name,
-            "prompt": full_prompt,
-            "stream": False,
-            "options": {
-                "temperature": self.temperature,
-                "num_predict": self.max_tokens
-            }
-        }
-        try:
-            response = requests.post(self.api_url, json=payload, timeout=120)
-            response.raise_for_status()
-            data = response.json()
-            return data.get("response", "Erro: resposta vazia do Ollama.")
-        except requests.exceptions.RequestException as e:
-            return f"Erro ao conectar com Ollama: {str(e)}"
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+        return self.generate_from_messages(messages)
 
 
+# -------------------------------------------------------------------------
+# Função de pipeline RAG (mantida para compatibilidade)
+# -------------------------------------------------------------------------
 def rag_pipeline(
     query: str,
     top_k: int = 5,
@@ -191,19 +209,7 @@ def rag_pipeline(
 ) -> str:
     """
     Função que orquestra o pipeline RAG completo: recuperação + geração.
-
-    Args:
-        query: pergunta do usuário
-        top_k: número de chunks a recuperar
-        filter_meta: filtro por metadados (ex: {"topico": "machine-learning"})
-        model_type: "openai", "deepseek" ou "ollama"
-        model_name: nome do modelo (opcional)
-        api_key: chave da API (opcional)
-
-    Returns:
-        resposta gerada
     """
-    # Importação local para evitar dependência circular
     try:
         from retriever import Retriever
     except ImportError:
@@ -222,6 +228,9 @@ def rag_pipeline(
     return generator.generate(query, context)
 
 
+# -------------------------------------------------------------------------
+# CLI para teste (mantida)
+# -------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
         description="Gera respostas RAG usando contexto do ChromaDB."
@@ -260,12 +269,10 @@ def main():
     )
     args = parser.parse_args()
 
-    # Converte filtros para dicionário
     filter_meta = None
     if args.filter:
         filter_meta = {k: v for k, v in args.filter}
 
-    # Executa o pipeline
     resposta = rag_pipeline(
         query=args.query,
         top_k=args.top_k,

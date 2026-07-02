@@ -6,7 +6,7 @@ simulator.py
 
 Simulador de provas Microsoft Azure AI Fundamentals (AI-901) com Flask.
 
-Usa a API do DeepSeek V4 Flash (modelo `deepseek-v4-flash`) para gerar
+Usa a API do DeepSeek Chat (modelo `deepseek-chat`) para gerar
 questoes de multipla escolha no estilo da prova. O usuario responde clicando:
   - acertou  -> a alternativa fica verde
   - errou    -> a alternativa fica vermelha, mostra qual era a correta (verde)
@@ -26,29 +26,18 @@ import os
 import csv
 import json
 import random
-import time
 import threading
 from datetime import datetime
 
-import requests
 from flask import Flask, request, jsonify, render_template
 
+# Importa os componentes refatorados
+from retriever import Retriever
+from generator import Generator
+
 # --------------------------------------------------------------------------- #
-# Configuracao
+# Configuração
 # --------------------------------------------------------------------------- #
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-HISTORY_CSV = os.path.join(BASE_DIR, "history.csv")
-
-from retriever import Retriever  # importa o recuperador ChromaDB
-_retriever = None  # será inicializado depois
-
-# =========================================================================== #
-
-from dotenv import load_dotenv
-load_dotenv()
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "").strip()
-DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
-DEEPSEEK_MODEL = "deepseek-v4-flash"
 
 EXAME = "ai-901"
 QUESTIONS_PER_BATCH = 5  # gera 5 questões por vez
@@ -59,6 +48,16 @@ CSV_FIELDS = [
     "correta", "resposta_usuario", "acertou", "explicacao",
 ]
 
+
+# Carrega variáveis de ambiente
+from dotenv import load_dotenv
+load_dotenv()
+
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+DEEPSEEK_MODEL = "deepseek-chat"      # nome oficial do modelo conversacional
+
+
+
 # Lock para escrita concorrente no CSV / set de perguntas
 _lock = threading.Lock()
 
@@ -67,16 +66,22 @@ _lock = threading.Lock()
 # novas perguntas assim que sao geradas.
 _perguntas_vistas = set()
 
-app = Flask(__name__)
+# Globais para os componentes
+_retriever = None
+_generator = None
+
+# Define o caminho absoluto para a pasta templates (que está na raiz do projeto)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))          # .../ai901_exam/rag
+ROOT_DIR = os.path.dirname(BASE_DIR)                           # .../ai901_exam
+TEMPLATE_DIR = os.path.join(ROOT_DIR, 'templates')             # .../ai901_exam/templates
+
+app = Flask(__name__, template_folder=TEMPLATE_DIR)
+
+# Opção: salvar na raiz do projeto
+HISTORY_CSV = os.path.join(ROOT_DIR, "history.csv")
 
 # --------------------------------------------------------------------------- #
 # Topicos oficiais do AI-901 (benchmark do exame atual)
-# Distribuicao aproximada de skills medidas pela Microsoft:
-#   - Workloads e consideracoes de IA (incl. IA Responsavel)         15-20%
-#   - Principios de machine learning no Azure                        20-25%
-#   - Computer Vision no Azure                                       15-20%
-#   - Natural Language Processing (NLP) no Azure                     15-20%
-#   - IA Generativa no Azure                                         15-20%
 # --------------------------------------------------------------------------- #
 TOPICOS_AI901 = [
     "Workloads de IA: tipos de cargas (visao, NLP, fala, decisao, generativa)",
@@ -108,7 +113,7 @@ def inicializar_chromadb():
     try:
         _retriever = Retriever(
             persist_dir="./chroma_db",
-            collection_name="meus_documentos"  # ajuste conforme seu ingest
+            collection_name="documentos_ai901"   # <- corrigido para o nome do ingest
         )
         print("[RAG] ChromaDB carregado com sucesso.")
         return True
@@ -202,14 +207,13 @@ def topicos_menos_vistos():
 
 
 # --------------------------------------------------------------------------- #
-# Geracao de perguntas via DeepSeek V4 Flash
+# Geracao de perguntas via DeepSeek (usando o Generator refatorado)
 # --------------------------------------------------------------------------- #
 def montar_prompt(evitar, contexto):
     """Monta as mensagens (system + user) para o modelo."""
     topicos_escolhidos = topicos_menos_vistos()
     topicos_txt = "\n".join(f"- {t}" for t in topicos_escolhidos)
 
-    # Lista de perguntas a evitar (limitada para nao estourar contexto)
     evitar_amostra = evitar[-120:] if len(evitar) > 120 else evitar
     evitar_txt = "\n".join(f"- {p}" for p in evitar_amostra) if evitar_amostra else "(nenhuma ainda)"
 
@@ -268,39 +272,15 @@ O campo "indice_correto" e o indice (0 a 4) da alternativa correta dentro de "op
     ]
 
 
-def chamar_deepseek(messages, tentativas=3):
-    """Chama a API do DeepSeek V4 Flash e retorna o conteudo de texto (JSON)."""
-    if not DEEPSEEK_API_KEY:
-        raise RuntimeError(
-            "Variavel de ambiente DEEPSEEK_API_KEY nao definida. "
-            "Defina sua chave antes de iniciar o simulador."
-        )
-    payload = {
-        "model": DEEPSEEK_MODEL,
-        "messages": messages,
-        "temperature": 0.9,
-        "max_tokens": 4000,
-        "response_format": {"type": "json_object"},
-        "thinking": {"type": "disabled"},
-    }
-    headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    for i in range(tentativas):
-        try:
-            resp = requests.post(DEEPSEEK_URL, headers=headers, json=payload, timeout=120)
-            resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"]
-        except requests.HTTPError as e:
-            if e.response.status_code in (429, 502, 503) and i < tentativas - 1:
-                time.sleep(2 ** i)
-                continue
-            raise
-
-
 def gerar_perguntas():
-    """Gera um lote de perguntas inéditas usando ChromaDB como fonte de contexto."""
+    """
+    Gera um lote de perguntas inéditas usando ChromaDB como fonte de contexto
+    e o Generator centralizado para comunicação com a API DeepSeek.
+    """
+    global _generator
+    if _generator is None:
+        raise RuntimeError("Generator não inicializado. Verifique sua chave da DeepSeek.")
+
     evitar = sorted(_perguntas_vistas)
 
     # 1) Tenta recuperar do ChromaDB
@@ -314,9 +294,11 @@ def gerar_perguntas():
 
     # 2) Monta o prompt com o contexto (pode ser vazio)
     messages = montar_prompt(evitar, contexto)
-    conteudo = chamar_deepseek(messages)
 
-    # Parse robusto do JSON retornado
+    # 3) Chama o Generator (que usa a API DeepSeek) e obtém o JSON bruto
+    conteudo = _generator.generate_from_messages(messages)
+
+    # 4) Parse robusto do JSON retornado
     try:
         parsed = json.loads(conteudo)
     except json.JSONDecodeError:
@@ -374,13 +356,6 @@ def api_questions():
             "questions": perguntas,
             "fonte": "chromadb" if _retriever is not None else "nenhuma"
         })
-    except requests.HTTPError as e:
-        detalhe = ""
-        try:
-            detalhe = e.response.text[:300]
-        except Exception:
-            pass
-        return jsonify({"erro": f"Erro da API DeepSeek: {e}. {detalhe}"}), 502
     except Exception as e:
         return jsonify({"erro": str(e)}), 500
 
@@ -427,10 +402,29 @@ def api_stats():
 # Inicializacao
 # --------------------------------------------------------------------------- #
 def inicializar():
+    global _generator
     garantir_csv()
     carregar_perguntas_vistas()
+
+    # Inicializa ChromaDB
     if not inicializar_chromadb():
         print("[RAG] ChromaDB indisponível. Usando conhecimento interno do modelo.")
+
+    # Inicializa o Generator para DeepSeek
+    try:
+        if not DEEPSEEK_API_KEY:
+            print("[LLM] Aviso: DEEPSEEK_API_KEY não definida. O simulador não funcionará.")
+        else:
+            _generator = Generator(
+                model_type="deepseek",
+                model_name=DEEPSEEK_MODEL,
+                api_key=DEEPSEEK_API_KEY,
+                temperature=0.9,
+                max_tokens=4000
+            )
+            print("[LLM] DeepSeek carregado com sucesso.")
+    except Exception as e:
+        print(f"[LLM] Erro ao inicializar DeepSeek: {e}")
 
 
 if __name__ == "__main__":
