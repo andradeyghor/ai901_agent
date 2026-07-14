@@ -203,7 +203,11 @@ def topicos_menos_vistos():
         except Exception as e:
             print(f"[HIST] Erro ao calcular tópicos menos vistos ({e}). Usando amostra aleatória.")
             return random.sample(TOPICOS_AI901, k=5)
-    return sorted(contagem, key=contagem.get)[:5]
+        
+    ordenados = sorted(contagem, key=contagem.get)
+    # Pega os 10 menos vistos e sorteia 5
+    candidatos = ordenados[:10] if len(ordenados) >= 10 else ordenados
+    return random.sample(candidatos, min(5, len(candidatos)))
 
 
 # --------------------------------------------------------------------------- #
@@ -248,9 +252,9 @@ Regras:
 - NAO repita nenhuma destas perguntas ja utilizadas (nem variacoes equivalentes):
 {evitar_txt}
 {bloco_contexto}
-- As perguntas DEVEM ser baseadas EXCLUSIVAMENTE no conteúdo fornecido no bloco de contexto (se houver).
-- Se o contexto não contiver informações suficientes sobre um tópico, não invente; simplesmente não gere perguntas sobre ele.
+- As perguntas devem ser baseadas no conteúdo fornecido no bloco de contexto (se houver).
 - Use o contexto para formular cenários práticos e específicos.
+- Certifique-se de que as 5 perguntas cubram tópicos distintos e abordem diferentes áreas do AI-901.
 
 Responda APENAS com um objeto JSON neste formato exato (sem texto fora do JSON):
 {{
@@ -286,8 +290,8 @@ def gerar_perguntas():
     # 1) Tenta recuperar do ChromaDB
     contexto = ""
     if _retriever is not None:
-        topicos_consulta = topicos_menos_vistos()
-        consulta = " ".join(topicos_consulta[:3])
+        topicos_escolhidos = topicos_menos_vistos()
+        consulta = random.choice(topicos_escolhidos)
         contexto = recuperar_contexto(consulta, k=6)
         if contexto:
             print("[RAG] Usando contexto do ChromaDB.")
@@ -296,7 +300,13 @@ def gerar_perguntas():
     messages = montar_prompt(evitar, contexto)
 
     # 3) Chama o Generator (que usa a API DeepSeek) e obtém o JSON bruto
-    conteudo = _generator.generate_from_messages(messages)
+    conteudo = _generator.generate_from_messages(
+        messages,
+        temperature=0.7,
+        top_p=0.9,
+        frequency_penalty=0.5,
+        presence_penalty=0.5
+    )
 
     # 4) Parse robusto do JSON retornado
     try:
@@ -419,8 +429,8 @@ def inicializar():
                 model_type="deepseek",
                 model_name=DEEPSEEK_MODEL,
                 api_key=DEEPSEEK_API_KEY,
-                temperature=0.3,
-                max_tokens=4000
+                temperature=0.5,
+                max_tokens=4000,
             )
             print("[LLM] DeepSeek carregado com sucesso.")
     except Exception as e:

@@ -114,7 +114,10 @@ class Generator:
         self,
         messages: list[dict[str, str]],
         temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None
+        max_tokens: Optional[int] = None,
+        top_p: Optional[float] = None,
+        frequency_penalty: Optional[float] = None,
+        presence_penalty: Optional[float] = None
     ) -> str:
         """
         Envia uma lista customizada de mensagens para a API e retorna a resposta.
@@ -151,13 +154,20 @@ class Generator:
         # Para OpenAI / DeepSeek (formato compatível)
         temp = temperature if temperature is not None else self.temperature
         max_tok = max_tokens if max_tokens is not None else self.max_tokens
+        top_p_val = top_p if top_p is not None else 1.0          # padrão = 1.0
+        freq_pen = frequency_penalty if frequency_penalty is not None else 0.0
+        pres_pen = presence_penalty if presence_penalty is not None else 0.0
+
 
         try:
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=messages,
                 temperature=temp,
-                max_tokens=max_tok
+                max_tokens=max_tok,
+                top_p=top_p_val,
+                frequency_penalty=freq_pen,
+                presence_penalty=pres_pen
             )
             return response.choices[0].message.content
         except Exception as e:
